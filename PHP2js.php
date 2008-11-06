@@ -358,10 +358,12 @@ class PHP2js {
 	);
 	
 	public function __destruct() {
+		/**
 		$js = htmlentities ($this->js);
 		echo ("<pre>$js</pre>");
 		$this->write();
 		echo $this->debug;
+		/*/
 	}
 	
 	
