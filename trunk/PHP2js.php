@@ -122,6 +122,18 @@ class PHP2js {
 		}
 	}
 	
+	private function findFirst ($_tokenNames) {
+		$name = '';
+		$value = '';
+		$cur = $this->current+1;
+		for ($i=$cur; $i<count($this->_tokens)-1; $i++) {
+			$this->getToken($name, $value, $this->_tokens[$i]);
+			if (in_array($name, $_tokenNames)) {
+				return $name;
+			}
+		}
+	}
+	
 	/**
 	 * tries to find the token in $this->_convert, $this->_keep and $this->_keepValue
 	 * if it fails it tries to find a method named as the token. If fails here also it throws away the token.
@@ -284,11 +296,16 @@ class PHP2js {
 	 * @return string
 	 */
 	private function T_PUBLIC ($value) {
+		$type = $this->findFirst(array('T_VARIABLE', 'T_FUNCTION'));
+		if ($type == 'T_FUNCTION') return '';
 		$js = '';
 		while (true) {
 			$this->next ($name, $value);
 			$this->parseToken($name, $value, $js);
-			if ($name == '=') {
+			if ($name == ';') {
+				$js = str_replace(array(' '), '', $js);
+				return 'this.'.$js;
+			} else if ($name == '=') {
 				$js = str_replace(array(' ','='), '', $js);
 				return 'this.'.$js.' =';
 			}
@@ -342,9 +359,9 @@ class PHP2js {
 	
 	public function __destruct() {
 		$js = htmlentities ($this->js);
-		//echo ("<pre>$js</pre>");
-		//$this->write();
-		//echo $this->debug;
+		echo ("<pre>$js</pre>");
+		$this->write();
+		echo $this->debug;
 	}
 	
 	
