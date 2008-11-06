@@ -1,21 +1,14 @@
 <?php
 error_reporting(E_ALL);
 class PHP2js {
-	private static $T;
-	private $file;
+	/** @var array holds tokens of the php file being converted */
 	private $_tokens;
+	/** @var int the current token */
 	private $current = 0;
+	/** @var javascript gets collected here */
 	private $js;
-	private $indent = 0;
-	private $debug;
-	
-	private $_openTags = array(
-			'T_OPEN_TAG', 'T_CLASS', 'T_PUBLIC', 'T_FOREACH', 'T_ARRAY', '{', 'T_VARIABLE', '('
-	);
-	private $_closeTags = array(
-		'}', 'T_CLOSE_TAG', ';', ')',
-	);
-	
+
+	/** @var array these token keys will be converted to their values */
 	private $_convert = array (
 		'T_IS_EQUAL'=>'==',
 		'T_IS_GREATER_OR_EQUAL'=>'>=',
@@ -57,28 +50,47 @@ class PHP2js {
 		'T_BREAK' => 'break',
 	);
 	
+	/** @var array these tokens stays the same */
 	private $_keep = array(
 		'=', ',', '}', '{', ';', '(', ')', '*', '/', '+', '-', '>', '<', '[', ']',
 	);
 	
+	/** @var array these tokens keeps their value */
 	private $_keepValue = array (
-		'T_CONSTANT_ENCAPSED_STRING', 'T_STRING', 'T_COMMENT', 'T_ML_COMMENT', 'T_DOC_COMMENT', 'T_LNUMBER'
+		'T_CONSTANT_ENCAPSED_STRING', 'T_STRING', 'T_COMMENT', 'T_ML_COMMENT', 'T_DOC_COMMENT', 'T_LNUMBER',
+		'T_WHITESPACE',
 	);
 	
+	/**
+	 * constructor, runs the show
+	 *
+	 * @param string $file path (relative or absolute) to the php file that is converted to js
+	 */
 	public function __construct ($file) {
 		$this->file = $file;
-		$this->loadFile();
+		$this->_tokens = $this->getTokens($file);
 		$this->compileJs();
+		
 	}
-
-	public function loadFile () {
+	
+	/**
+	 * gets tokens from file. Remove the meta PHP2js stuff.
+	 *
+	 * @param string $file path (relative or absolute) to the php file that is converted to js
+	 * @return array
+	 */
+	private function getTokens($file) {
 		$src = file_get_contents($this->file);
 		$src = preg_replace ("/\n([\t ]*)require.*PHP2js\.php.*\'.*;/Uis", "", $src);
 		$src = preg_replace ("/\n([\t ]*)new.*PHP2js.*;/Uis", "", $src);
 		$this->src = $src;
-		$this->_tokens = token_get_all($src);
+		return token_get_all($src);
 	}
 	
+	/**
+	 * loops through tokens and convert to js
+	 *
+	 */
 	private function compileJs() {
 		foreach ($this->_tokens as $_) {
 			$this->next ($name, $value);
@@ -86,44 +98,92 @@ class PHP2js {
 		}
 	}
 	
+	/**
+	 * output the js and die
+	 */
+	private function renderJs () {
+		echo "<script>$this->js</script>";
+		die();
+	}
+	
+	/**
+	 * changed referenced args to name and value of next token
+	 *
+	 * @param string $name
+	 * @param string $value
+	 * @param unknown_type $i, the amount of nexts to skip
+	 */
 	private function next(& $name, & $value, $i=1) {
 		for ($j=0; $j<$i; $j++) {
 			$this->current++;
-			if ($this->current > (count($this->_tokens)-1)) die();
+			if ($this->current > (count($this->_tokens)-1)) $this->renderJs();
 			$_token = $this->_tokens[$this->current];
 			$this->getToken ($name, $value, $_token);
 		}
 	}
 	
+	/**
+	 * tries to find the token in $this->_convert, $this->_keep and $this->_keepValue
+	 * if it fails it tries to find a method named as the token. If fails here also it throws away the token.
+	 *
+	 * @param string $name
+	 * @param string $value
+	 * @param string $js store js here by reference
+	 */
 	private function parseToken ($name, $value, & $js) {
-		$_simple = array_keys ($this->_convert);
-		if (in_array($name, $_simple)) {
+		//change name to other value
+		if (in_array($name, array_keys ($this->_convert))) {
 			$js .= (!empty($this->_convert[$name])) ? $this->_convert[$name]: $name;
+		//keep key
 		} elseif (in_array($name, $this->_keep)) {
 			$js .= $name;
+		//keep value
 		} elseif (in_array($name, $this->_keepValue)) {
 			$js .= $value;
+		//call method
 		} else {
-			if (!empty($this->_rename[$name])) $name = $this->_rename[$name];
 			if (method_exists($this, $name)) {
 				$js .= $this->$name($value);
 			}
 		}
+		//ignore
 	}
 	
-	/* converters */
+	/**
+	 * converters
+	 *
+	 * These guys are equivalents to tokens.
+	 */
 	
+	/**
+	 * class definition
+	 *
+	 * @param sting $value
+	 * @return string
+	 */
 	private function T_CLASS($value) {
 		$this->next ($name, $value, 2);
 		return "function $value() ";
 		return "var $value = new function() {";
 	}
 	
+	/**
+	 * define function
+	 *
+	 * @param string $value
+	 * @return string
+	 */
 	private function T_FUNCTION($value) {
 		$this->next ($name, $value, 2);
 		return "this.$value = function";
 	}
 	
+	/**
+	 * echo is replaced with document.write
+	 *
+	 * @param string $value
+	 * @return string
+	 */
 	private function T_ECHO($value) {
 		$js = '';
 		$jsTmp = '';
@@ -138,6 +198,12 @@ class PHP2js {
 		}
 	}
 	
+	/**
+	 * array. Supports both single and associative
+	 *
+	 * @param string $value
+	 * @return string
+	 */
 	private function T_ARRAY($value) {
 		$_convert = array (
 			'('=>'{',
@@ -177,6 +243,12 @@ class PHP2js {
 		return $js;
 	}
 	
+	/**
+	 * foreach. Gets converted to for (var blah in blih). Supports as $key=>$value
+	 *
+	 * @param string $value
+	 * @return string
+	 */
 	private function T_FOREACH($value) {
 		$_vars = array();
 		for ($i=0; $i<100; $i++) {
@@ -205,6 +277,12 @@ class PHP2js {
 		}
 	}
 	
+	/**
+	 * declare a public class var
+	 *
+	 * @param string $value
+	 * @return string
+	 */
 	private function T_PUBLIC ($value) {
 		$js = '';
 		while (true) {
@@ -217,12 +295,14 @@ class PHP2js {
 		}
 	}
 	
+	/**
+	 * variable. Remove the $
+	 *
+	 * @param string $value
+	 * @return string
+	 */
 	private function T_VARIABLE($value) {
 		return str_replace('$', '', $value);
-	}
-	
-	private function T_WHITESPACE($value) {
-		return $value;
 	}
 	
 	/* helpers */
@@ -241,12 +321,28 @@ class PHP2js {
 		return str_replace('$', '', $var);
 	}
 	
-	/** debugging stuff */
+	/** debugging stuff. Ugly and deprecated. */
+	
+	/** deprecated and sucks */
+	private $_openTags = array(
+			'T_OPEN_TAG', 'T_CLASS', 'T_PUBLIC', 'T_FOREACH', 'T_ARRAY', '{', 'T_VARIABLE', '('
+	);
+	
+	/** deprecated and sucks */
+	
+	/** deprecated and sucks */
+	private $indent = 0;
+	/** deprecated and sucks */
+	private $debug;
+	
+	
+	private $_closeTags = array(
+		'}', 'T_CLOSE_TAG', ';', ')',
+	);
 	
 	public function __destruct() {
 		$js = htmlentities ($this->js);
 		//echo ("<pre>$js</pre>");
-		echo "<script>$this->js</script>";
 		//$this->write();
 		//echo $this->debug;
 	}
