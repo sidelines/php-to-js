@@ -175,7 +175,7 @@ class PHP2js {
 	private function parseToken ($name, $value, & $js, $_schema=array()) {
 		//custom changes
 		if (in_array($name, array_keys ((array)$_schema))) {
-			$js .= (!empty($_schema[$name])) ? $_schema[$name]: $name;
+			$js .= $_schema[$name];
 		//change name to other value
 		} else if (in_array($name, array_keys ($this->_convert))) {
 			$js .= (!empty($this->_convert[$name])) ? $this->_convert[$name]: $name;
@@ -240,35 +240,22 @@ class PHP2js {
 	 */
 	private function T_ARRAY($value) {
 		$_convert = array('('=>'{',	')'=>'}',);
-		$js = '';
-		$i = 0;
-		while (true) {
-			$this->next ($name, $value);
-			if ($name == 'T_CONSTANT_ENCAPSED_STRING') {
-				$jsSub = '';
-				while (true) {
-					$this->parseToken($name, $value, $jsSub, $_convert);
-					if (in_array($name, array(',', ')'))) {
-						break ;
-					}
-					$this->next ($name, $value);
-				}
-				if (strpos($jsSub, ':') === false) {
-					$jsSub = "$i:$jsSub";
-				}
-				$js .= $jsSub;
-			} else if (!empty($_convert[$name])) {
-				$js .= $_convert[$name];
-			} else {
-				$this->parseToken($name, $value, $js);
-			}
-			if ($name == ';') break;
-			$i++;
+		$js = $this->parseUntil(array(';'), $_convert, true);
+		if (strpos($js, ':') === false) {
+			$this->tmp = -1;
+			$js = preg_replace_callback ('/([{, \t\n])(\'.*\')(|.*:(.*))([,} \t\n])/Uis', array($this, 'cb_T_ARRAY'), $js);
 		}
 		return $js;
 	}
 
-
+	private function cb_T_ARRAY($_matches) {
+		$this->tmp++;
+		if (strpos($_matches[0], ':') === false) {
+			return ($_matches[1].$this->tmp.':'.$_matches[2].$_matches[3].$_matches[4].$_matches[5]);
+		} else {
+			return $_matches[0];
+		}
+	}
 	/**
 	 * foreach. Gets converted to for (var blah in blih). Supports as $key=>$value
 	 *
